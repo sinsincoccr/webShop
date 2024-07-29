@@ -2,17 +2,19 @@
 
 const createError = require('http-errors');
 const express = require('express');
-const path = require('path');
 const cookieParser = require('cookie-parser');
+const morgan = require('morgan');
+const session = require('express-session');
+const nunjucks = require('nunjucks');
+const dotenv = require('dotenv');
+
+dotenv.config();
+const pageRouter = require('./routes/page');
+
+
+const path = require('path');
 const logger = require('morgan');
-const bodyParser = require('body-parser');
 
-const indexRouter = require('./routes/index');
-const usersRouter = require('./routes/users');
-const testRouter = require('./routes/test');
-
-const app = express();
-const port = 3000;
 
 // database
 const oracledb = require('oracledb'); // 오라클 데이터베이스 모듈
@@ -24,28 +26,47 @@ const dbConfig = {
   connectString: 'localhost:1521/orcl'
 };
 
-// Middleware setup
+const app = express();
+app.set('port', process.env.PORT || 8001);
 app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'ejs');
-app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
+app.set('view engine', 'html');
+nunjucks.configure('views', {
+  express: app,
+  watch: true,
+});
+
+app.use(morgan('dev'));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(express.json());
+app.use(express.urlencoded({extended: false}));
+app.use(cookieParser(process.env.COOKIE_SECRET));
 
-// Route setup
-app.use('/', indexRouter);
-app.use('/users', usersRouter);
-app.use('/test', testRouter);
+app.use(logger('dev'));
 
-app.get('/myPage', (req, res) => {
-  res.render('myPage');
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.use('/', pageRouter);
+app.use((req,res,next) => {
+  const error = new Error( '${req.method ${req.url} 라우터가 없습니다.')
+  error.status = 404;
 });
 
-app.get('/contact', (req, res) => {
-  res.render('contact');
+app.use((req,res,next) => {
+  const error = new Error( '${req.method ${req.url} 라우터가 없습니다.')
+  error.status = 404;
+  next(error);
 });
+app.use((err, req,res,next) => {
+  res.local.message = err.message;
+  res.local.error = process.env.NODE_ENV !== 'production' ? err: {};
+  res.status(err.status || 500);
+  res.render('error');
+});
+
+app.listen(app.get('port'), () => {
+  console.log(app.get('port'), '번 포트에서 대기 중');
+});
+
 
 app.post('/contactProc', async (req, res) => {
   const name = req.body.name;
@@ -86,17 +107,4 @@ app.use((req, res, next) => {
   next(createError(404));
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
 
-  res.status(err.status || 500);
-  res.render('error');
-});
-
-app.listen(port, () => {
-  console.log(`서버가 실행되었습니다. 접속주소 : http://localhost:${port}`);
-});
-
-module.exports = app;
